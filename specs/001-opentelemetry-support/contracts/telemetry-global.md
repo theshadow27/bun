@@ -51,7 +51,7 @@ export type InstrumentKind = "http" | "fetch" | "sql" | "redis" | "s3";
 **Internal SDK** (bun-otel/types.ts - NOT exported from package):
 
 ```typescript
-export enum InstrumentKind {
+export enum InstrumentType {
   Custom = 0,
   HTTP = 1,
   Fetch = 2,
@@ -64,14 +64,14 @@ export enum InstrumentKind {
 **Zig Definition** (src/telemetry/main.zig):
 
 ```zig
-pub const InstrumentKind = enum(u8) {
+pub const InstrumentType = enum(u8) {
     custom = 0,
     http = 1,
     fetch = 2,
     sql = 3,
     redis = 4,
     s3 = 5,
-    pub const COUNT = @typeInfo(InstrumentKind).Enum.fields.len;
+    pub const COUNT = @typeInfo(InstrumentType).Enum.fields.len;
 };
 ```
 
@@ -106,7 +106,7 @@ Register an instrument for telemetry callbacks.
 **Instrument Interface**:
 
 ```typescript
-export type OpId = number & { readonly __brand: 'OpId' };
+export type OpId = number & { readonly __brand: "OpId" };
 
 export interface Instrument {
   // Instrument kind (used for routing to correct operation hooks)
@@ -118,7 +118,10 @@ export interface Instrument {
 
   // Operation callbacks (at least one required)
   onOperationStart?(operationId: OpId, attributes: Record<string, any>): void;
-  onOperationProgress?(operationId: OpId, attributes: Record<string, any>): void;
+  onOperationProgress?(
+    operationId: OpId,
+    attributes: Record<string, any>,
+  ): void;
   onOperationEnd?(operationId: OpId, attributes: Record<string, any>): void;
   onOperationError?(operationId: OpId, attributes: Record<string, any>): void;
   onOperationInject?(operationId: OpId, context: Record<string, any>): any;
@@ -157,6 +160,7 @@ Unregister an instrument by reference.
 **Note**: nativeHooks is INTERNAL API for TypeScript bridges. Not intended for direct use by application code.
 
 **IMPORTANT**: `Bun.telemetry.nativeHooks` is a **function**, not an object. It returns `undefined` when telemetry is disabled, enabling true zero-cost abstraction. Always call it and use optional chaining:
+
 ```typescript
 const hooks = Bun.telemetry.nativeHooks();
 if (hooks) {
@@ -167,6 +171,7 @@ Bun.telemetry.nativeHooks()?.notifyStart(...);
 ```
 
 **Operation IDs**: All notify\* functions require an operation ID from `nativeHooks()?.generateId()`. IDs use the OpId type:
+
 - **Zig side**: `pub const OpId = u64` type alias (defined in src/telemetry/main.zig:15)
 - **TypeScript side**: `export type OpId = number & { readonly __brand: 'OpId' }` branded type (hook-lifecycle.md:13)
 - **Conversion**: Zig OpId (u64) converted to JavaScript number with 53-bit safe precision (up to 2^53-1)
@@ -202,7 +207,7 @@ export function handleIncomingRequest(
 ) {
   // Early return if no HTTP instruments registered or telemetry disabled
   const hooks = Bun.telemetry.nativeHooks();
-  if (!hooks?.isEnabledFor(InstrumentKind.HTTP)) {
+  if (!hooks?.isEnabledFor(InstrumentType.HTTP)) {
     return;
   }
 
@@ -242,7 +247,7 @@ if (!hooks) return; // Telemetry disabled
 
 const operationId = hooks.generateId();
 const attributes = buildRequestAttributes(req);
-hooks.notifyStart(InstrumentKind.HTTP, operationId, attributes);
+hooks.notifyStart(InstrumentKinds.HTTP, operationId, attributes);
 ```
 
 **Note**: JavaScript numbers can safely represent integers up to 2^53-1. Beyond this limit, values will lose precision. This is acceptable as reaching 2^53 operations is extremely unlikely in practice (would take ~285 years at 1M ops/sec).
@@ -297,7 +302,7 @@ if (!hooks) return;
 const operationId = hooks.generateId();
 const attributes = buildRequestAttributes(req);
 
-hooks.notifyStart(InstrumentKind.HTTP, operationId, attributes);
+hooks.notifyStart(InstrumentKinds.HTTP, operationId, attributes);
 ```
 
 ---
@@ -342,7 +347,7 @@ Notifies all registered instruments of an operation completion.
 res.once("finish", () => {
   const hooks = Bun.telemetry.nativeHooks();
   const attributes = buildResponseAttributes(res);
-  hooks?.notifyEnd(InstrumentKind.HTTP, operationId, attributes);
+  hooks?.notifyEnd(InstrumentKinds.HTTP, operationId, attributes);
 });
 ```
 
@@ -387,7 +392,7 @@ Notifies all registered instruments of an operation error.
 res.once("error", (err: unknown) => {
   const hooks = Bun.telemetry.nativeHooks();
   const attributes = buildErrorAttributes(err);
-  hooks?.notifyError(InstrumentKind.HTTP, operationId, attributes);
+  hooks?.notifyError(InstrumentKinds.HTTP, operationId, attributes);
 });
 ```
 
@@ -438,7 +443,7 @@ Notifies all registered instruments of intermediate operation progress.
 req.on("data", (chunk: Buffer) => {
   bytesReceived += chunk.length;
   const hooks = Bun.telemetry.nativeHooks();
-  hooks?.notifyProgress(InstrumentKind.HTTP, operationId, {
+  hooks?.notifyProgress(InstrumentKinds.HTTP, operationId, {
     "http.request.body.bytes_received": bytesReceived,
   });
 });
@@ -511,14 +516,10 @@ const injectNames = hooks.getConfigurationProperty(
 );
 
 // Step 2: Get header values from instruments
-const injectValues = hooks.notifyInject(
-  InstrumentKind.Fetch,
-  operationId,
-  {
-    "url.full": url.href,
-    "http.request.method": method,
-  },
-);
+const injectValues = hooks.notifyInject(InstrumentKinds.Fetch, operationId, {
+  "url.full": url.href,
+  "http.request.method": method,
+});
 
 // Step 3: Zip names and values together by index
 if (Array.isArray(injectNames)) {
@@ -685,7 +686,7 @@ pub const InstrumentKind = enum(u8) {
 **TypeScript Definition** (packages/bun-otel/types.ts):
 
 ```typescript
-export enum InstrumentKind {
+export enum InstrumentType {
   custom = 0,
   http = 1,
   fetch = 2,
@@ -701,17 +702,17 @@ The InstrumentKind type has two representations:
 
 1. **Public API** (packages/bun-types/telemetry.d.ts):
    - Uses string literals: `"custom" | "http" | "fetch" | "sql" | "redis" | "s3"`
-   - Used in `Bun.telemetry.attach({ type: "http", ... })`
+   - Used in `Bun.telemetry.attach({ kind: "http", ... })`
    - Ergonomic for application developers
 
 2. **Internal API** (packages/bun-otel/types.ts, nativeHooks):
-   - Uses numeric enum: `InstrumentKind.http = 1`
+   - Uses numeric enum internally for performance
    - Used by nativeHooks and internal bridges
    - NOT exported from public `bun:telemetry` module
 
 **Conversion**: The Zig bridge layer automatically converts string literals from the public API to numeric enum values for internal use. This decouples internal implementation details (numeric values) from the public API, without compromising performance. String parsing happens only during setup and reflection; numeric enum values enable comptime optimization and O(1) dispatch.
 
-**Usage Note**: Application code uses string literals (`"http"`), while internal instrumentation code (TypeScript bridges) uses the numeric enum (`InstrumentKind.http`). See `bun-telemetry-api.md` for complete public API documentation.
+**Usage Note**: Application code uses string literals (`"http"`), while internal instrumentation code uses the numeric representation for efficient routing. See `bun-telemetry-api.md` for complete public API documentation.
 
 ---
 
@@ -764,7 +765,7 @@ export function handleIncomingRequest(
 ) {
   // 1. Early return check
   const hooks = Bun.telemetry.nativeHooks();
-  if (!hooks?.isEnabledFor(InstrumentKind.HTTP)) {
+  if (!hooks?.isEnabledFor(InstrumentType.HTTP)) {
     return;
   }
 
@@ -797,17 +798,17 @@ export function handleIncomingRequest(
   }
 
   // 4. Notify operation start
-  hooks.notifyStart(InstrumentKind.HTTP, operationId, attributes);
+  hooks.notifyStart(InstrumentKinds.HTTP, operationId, attributes);
 
   // 5. Register completion handlers
   res.once("finish", () => {
     const responseAttrs = buildResponseAttributes(res);
-    hooks.notifyEnd(InstrumentKind.HTTP, operationId, responseAttrs);
+    hooks.notifyEnd(InstrumentKinds.HTTP, operationId, responseAttrs);
   });
 
   res.once("error", (err: unknown) => {
     const errorAttrs = buildErrorAttributes(err);
-    hooks.notifyError(InstrumentKind.HTTP, operationId, errorAttrs);
+    hooks.notifyError(InstrumentKinds.HTTP, operationId, errorAttrs);
   });
 }
 ```
@@ -823,7 +824,7 @@ General pattern (two-stage injection):
 
 export function handleOutgoingFetch(url: string, init: RequestInit) {
   const hooks = Bun.telemetry.nativeHooks();
-  if (!hooks?.isEnabledFor(InstrumentKind.Fetch)) {
+  if (!hooks?.isEnabledFor(InstrumentType.Fetch)) {
     return;
   }
 
@@ -835,13 +836,9 @@ export function handleOutgoingFetch(url: string, init: RequestInit) {
   );
 
   // 2. Get header values from instruments (returns array of values)
-  const injectValues = hooks.notifyInject(
-    InstrumentKind.Fetch,
-    operationId,
-    {
-      "url.full": url,
-    },
-  );
+  const injectValues = hooks.notifyInject(InstrumentKinds.Fetch, operationId, {
+    "url.full": url,
+  });
 
   // 3. Zip header names and values together by index
   if (Array.isArray(injectNames)) {
@@ -859,7 +856,7 @@ export function handleOutgoingFetch(url: string, init: RequestInit) {
 
   // 4. Build attributes and notify start
   const attributes = buildFetchAttributes(url, init);
-  hooks.notifyStart(InstrumentKind.Fetch, operationId, attributes);
+  hooks.notifyStart(InstrumentKinds.Fetch, operationId, attributes);
 }
 ```
 
@@ -967,7 +964,7 @@ test("notifyStart invokes all registered instruments", () => {
   const calls: number[] = [];
 
   const id1 = Bun.telemetry.attach({
-    type: InstrumentKind.HTTP,
+    kind: InstrumentKinds.HTTP,
     name: "test-1",
     version: "1.0.0",
     onOperationStart(id, attrs) {
@@ -976,7 +973,7 @@ test("notifyStart invokes all registered instruments", () => {
   });
 
   const id2 = Bun.telemetry.attach({
-    type: InstrumentKind.HTTP,
+    kind: InstrumentKinds.HTTP,
     name: "test-2",
     version: "1.0.0",
     onOperationStart(id, attrs) {
@@ -986,7 +983,7 @@ test("notifyStart invokes all registered instruments", () => {
 
   // Call via nativeHooks (simulating bridge layer)
   const hooks = Bun.telemetry.nativeHooks();
-  hooks?.notifyStart(InstrumentKind.HTTP, 12345, {
+  hooks?.notifyStart(InstrumentKinds.HTTP, 12345, {
     "http.request.method": "GET",
   });
 

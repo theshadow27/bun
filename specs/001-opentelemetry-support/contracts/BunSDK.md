@@ -832,8 +832,8 @@ test("BunSDK auto-registers HTTP and Fetch instrumentations", () => {
 
   // Verify Bun instrumentations registered
   const hooks = Bun.telemetry.nativeHooks();
-  expect(hooks?.isEnabledFor(InstrumentKind.HTTP)).toBe(true);
-  expect(hooks?.isEnabledFor(InstrumentKind.Fetch)).toBe(true);
+  expect(hooks?.isEnabledFor(InstrumentType.HTTP)).toBe(true);
+  expect(hooks?.isEnabledFor(InstrumentType.Fetch)).toBe(true);
 
   sdk.shutdown();
 });
@@ -911,7 +911,7 @@ test("BunSDK auto-registers HTTP and Fetch instrumentations", () => {
 
 3. **Automatic AWS SDK Instrumentation**:
    - `BunS3Instrumentation` for S3 operations
-   - Hooks already provided in Zig layer (InstrumentKind.S3)
+   - Hooks already provided in Zig layer (InstrumentKinds.S3)
 
 4. **Custom Resource Detectors**:
 

@@ -65,11 +65,11 @@ interface BunSqlInstrumentationConfig {
 
 ## Native Instrument Configuration
 
-**Zig Configuration** (`Bun.telemetry.attach` for `type: "sql"`):
+**Zig Configuration** (`Bun.telemetry.attach` for `kind: "sql"`):
 
 ```typescript
 Bun.telemetry.attach({
-  type: "sql",
+  kind: "sql",
   name: "@opentelemetry/instrumentation-sqlite",
   version: "1.0.0",
 
@@ -815,7 +815,7 @@ test("SQL instrumentation captures SELECT query", () => {
   let endAttrs: any;
 
   Bun.telemetry.attach({
-    type: "sql",
+    kind: "sql",
     name: "test",
     version: "1.0.0",
     onOperationStart(id, attributes) {
@@ -854,7 +854,7 @@ test("Enhanced reporting captures query parameters", () => {
   let startAttrs: any;
 
   Bun.telemetry.attach({
-    type: "sql",
+    kind: "sql",
     name: "test",
     version: "1.0.0",
     captureAttributes: {
@@ -881,7 +881,7 @@ test("SQL instrumentation captures constraint errors", () => {
   let errorAttrs: any;
 
   Bun.telemetry.attach({
-    type: "sql",
+    kind: "sql",
     name: "test",
     version: "1.0.0",
     onOperationError(id, attributes) {
@@ -915,7 +915,7 @@ test("Non-parameterized queries are sanitized", () => {
   let startAttrs: any;
 
   Bun.telemetry.attach({
-    type: "sql",
+    kind: "sql",
     name: "test",
     version: "1.0.0",
     onOperationStart(id, attributes) {
@@ -941,7 +941,7 @@ test("Batch operations include batch size", () => {
   let startAttrs: any;
 
   Bun.telemetry.attach({
-    type: "sql",
+    kind: "sql",
     name: "test",
     version: "1.0.0",
     onOperationStart(id, attributes) {

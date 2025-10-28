@@ -36,7 +36,7 @@ This decision has significant implications for startup performance, code maintai
 Application Code
   → import { BunHttpInstrumentation } from 'bun-otel'  // Only loads if imported
     → BunHttpInstrumentation.enable()
-      → Bun.telemetry.attach({ type: InstrumentKind.HTTP, ... })
+      → Bun.telemetry.attach({ kind: InstrumentKinds.HTTP, ... })
         → Native hooks registered
 ```
 

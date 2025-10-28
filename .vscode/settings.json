@@ -169,4 +169,5 @@
   },
   "git.detectSubmodules": false,
   "bun.test.customScript": "./build/debug/bun-debug test",
+  "cSpell.words": ["semconv"],
 }

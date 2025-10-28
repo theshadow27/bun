@@ -26,7 +26,7 @@ type InstrumentRef = { id: number } & Disposable; // deregister function
 type InstrumentKind = "custom" | "http" | "fetch" | "sql" | "redis" | "s3";
 
 interface NativeInstrument {
-  type: InstrumentKind; // Required: Operation category ("http", "fetch", etc.)
+  kind: InstrumentKind; // Required: Operation category ("http", "fetch", etc.)
   name: string; // Required: Instrumentation name
   version: string; // Required: Instrumentation version
 
@@ -68,7 +68,7 @@ interface NativeInstrument {
 
 ```typescript
 TypeError: "instrument must be an object";
-TypeError: "instrument.type must be a valid operation kind string";
+TypeError: "instrument.kind must be a valid operation kind string";
 TypeError: "instrument.name must be a non-empty string";
 TypeError: "instrument.version must be a non-empty string";
 TypeError: "At least one hook function must be provided";
@@ -88,15 +88,15 @@ TypeError: "onOperationStart must be a function";
 
 **Behavior**:
 
-- Instrument is registered globally for the specified operation type
-- Future operations of matching `type` will invoke the registered hooks
+- Instrument is registered globally for the specified operation kind
+- Future operations of matching `kind` will invoke the registered hooks
 - Memory overhead: ~160 bytes per instrument
 
 **Example**:
 
 ```typescript
 const instrumentId = Bun.telemetry.attach({
-  type: "http",
+  kind: "http",
   name: "@opentelemetry/instrumentation-http",
   version: "0.1.0",
 

@@ -18,17 +18,20 @@ Security validation is performed at the **SDK level** (TypeScript) rather than n
 The SDK **MUST** reject these headers in `injectHeaders` and `captureAttributes`:
 
 ### Authentication & Authorization
+
 - `authorization`
 - `proxy-authorization`
 - `www-authenticate`
 - `proxy-authenticate`
 
 ### Session Management
+
 - `cookie`
 - `set-cookie`
 - `set-cookie2` (deprecated but still blocked)
 
 ### API Keys & Tokens
+
 - `x-api-key`
 - `api-key`
 - `x-auth-token`
@@ -36,11 +39,13 @@ The SDK **MUST** reject these headers in `injectHeaders` and `captureAttributes`
 - `x-xsrf-token`
 
 ### Cloud Provider Credentials
+
 - `x-amz-security-token` (AWS)
 - `x-goog-iam-authority-selector` (Google Cloud)
 - `x-goog-iam-authorization-token` (Google Cloud)
 
 ### Custom Security Headers
+
 - Headers starting with `x-secret-`
 - Headers starting with `x-token-`
 - Headers containing `password` (case-insensitive)
@@ -85,8 +90,8 @@ export function validateHeaderName(headerName: string): void {
   if (BLOCKED_HEADERS.has(normalized)) {
     throw new TypeError(
       `Cannot inject or capture header "${headerName}": ` +
-      `This header may contain sensitive credentials. ` +
-      `See https://docs.bun.sh/api/telemetry#security for details.`
+        `This header may contain sensitive credentials. ` +
+        `See https://docs.bun.sh/api/telemetry#security for details.`,
     );
   }
 
@@ -95,14 +100,17 @@ export function validateHeaderName(headerName: string): void {
     if (pattern.test(normalized)) {
       throw new TypeError(
         `Cannot inject or capture header "${headerName}": ` +
-        `Header name matches blocked pattern ${pattern}. ` +
-        `This header may contain sensitive information.`
+          `Header name matches blocked pattern ${pattern}. ` +
+          `This header may contain sensitive information.`,
       );
     }
   }
 }
 
-export function validateInjectHeaders(config: { request?: string[]; response?: string[] }): void {
+export function validateInjectHeaders(config: {
+  request?: string[];
+  response?: string[];
+}): void {
   if (config.request) {
     for (const header of config.request) {
       validateHeaderName(header);
@@ -116,7 +124,10 @@ export function validateInjectHeaders(config: { request?: string[]; response?: s
   }
 }
 
-export function validateCaptureAttributes(config: { requestHeaders?: string[]; responseHeaders?: string[] }): void {
+export function validateCaptureAttributes(config: {
+  requestHeaders?: string[];
+  responseHeaders?: string[];
+}): void {
   if (config.requestHeaders) {
     for (const header of config.requestHeaders) {
       validateHeaderName(header);
@@ -139,7 +150,7 @@ export function validateCaptureAttributes(config: { requestHeaders?: string[]; r
 import { validateInjectHeaders, validateCaptureAttributes } from "./validation";
 
 export interface InstrumentConfig {
-  type: InstrumentKind;
+  kind: InstrumentKind;
   name: string;
   version: string;
   injectHeaders?: {
@@ -172,7 +183,7 @@ export function attach(config: InstrumentConfig): number {
 
 The SDK should document the security constraints prominently:
 
-```markdown
+````markdown
 ### Security Constraints
 
 For security reasons, the following headers **cannot** be injected or captured:
@@ -191,20 +202,22 @@ headers will throw a `TypeError` at instrumentation registration time.
 ```typescript
 // ❌ This will throw a TypeError
 Bun.telemetry.attach({
-  type: InstrumentKind.HTTP,
+  kind: InstrumentKinds.HTTP,
   injectHeaders: {
-    response: ["authorization"] // ERROR: Blocked header
-  }
+    response: ["authorization"], // ERROR: Blocked header
+  },
 });
 
 // ✅ This is allowed
 Bun.telemetry.attach({
-  type: InstrumentKind.HTTP,
+  kind: InstrumentKinds.HTTP,
   injectHeaders: {
-    response: ["traceparent", "tracestate"] // Safe distributed tracing headers
-  }
+    response: ["traceparent", "tracestate"], // Safe distributed tracing headers
+  },
 });
 ```
+````
+
 ```
 
 ## Testing Strategy
@@ -225,3 +238,4 @@ See: `test/js/bun/telemetry/security-validation.test.ts` for test examples.
 2. **Custom Blocklists**: Per-organization header blocklists via configuration
 3. **Audit Logging**: Log attempts to configure blocked headers for security monitoring
 4. **Runtime Warnings**: Warn (but don't block) for headers matching suspicious patterns
+```

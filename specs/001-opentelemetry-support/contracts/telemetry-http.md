@@ -38,7 +38,7 @@ Controls which headers are **READ** from incoming requests/responses and include
 
 ```typescript
 Bun.telemetry.attach({
-  type: "http",
+  kind: "http",
   captureAttributes: {
     requestHeaders: ["content-type", "user-agent"], // Capture these incoming headers
     responseHeaders: ["content-type"], // Capture these outgoing headers
@@ -67,7 +67,7 @@ Controls which headers are **WRITTEN** to outgoing requests/responses for distri
 
 ```typescript
 Bun.telemetry.attach({
-  type: "http",
+  kind: "http",
   injectHeaders: {
     request: ["traceparent", "tracestate"], // Inject into outgoing fetch requests
     response: ["traceparent"], // Inject into HTTP server responses
@@ -127,7 +127,7 @@ Declare which headers to inject when attaching the instrument:
 
 ```typescript
 Bun.telemetry.attach({
-  type: "fetch",
+  kind: "fetch",
   name: "@opentelemetry/instrumentation-fetch",
   version: "1.0.0",
 
@@ -288,7 +288,7 @@ Inject trace context headers into HTTP server responses.
 
 ```typescript
 Bun.telemetry.attach({
-  type: "http",
+  kind: "http",
   injectHeaders: {
     response: ["traceparent"], // Inject into HTTP server responses
   },
@@ -380,7 +380,7 @@ Properties are computed from:
 
 **ENV Variable**: `BUN_OTEL_HTTP_CAPTURE_HEADERS_FETCH_REQUEST`
 
-**Instrument Config**: `captureAttributes.requestHeaders` (for `type: "fetch"`)
+**Instrument Config**: `captureAttributes.requestHeaders` (for `kind: "fetch"`)
 
 **Default**: `["content-type", "content-length", "user-agent", "accept"]`
 
@@ -392,7 +392,7 @@ export BUN_OTEL_HTTP_CAPTURE_HEADERS_FETCH_REQUEST="content-type,user-agent,x-re
 
 ```typescript
 Bun.telemetry.attach({
-  type: "fetch",
+  kind: "fetch",
   captureAttributes: {
     requestHeaders: ["content-type", "x-request-id"], // Intersection with ENV
   },
@@ -408,7 +408,7 @@ Bun.telemetry.attach({
 
 **ENV Variable**: `BUN_OTEL_HTTP_CAPTURE_HEADERS_FETCH_RESPONSE`
 
-**Instrument Config**: `captureAttributes.responseHeaders` (for `type: "fetch"`)
+**Instrument Config**: `captureAttributes.responseHeaders` (for `kind: "fetch"`)
 
 **Default**: `["content-type", "content-length"]`
 
@@ -420,7 +420,7 @@ Bun.telemetry.attach({
 
 **ENV Variable**: `BUN_OTEL_HTTP_CAPTURE_HEADERS_SERVER_REQUEST`
 
-**Instrument Config**: `captureAttributes.requestHeaders` (for `type: "http"`)
+**Instrument Config**: `captureAttributes.requestHeaders` (for `kind: "http"`)
 
 **Default**: `["content-type", "content-length", "user-agent", "accept"]`
 
@@ -432,7 +432,7 @@ Bun.telemetry.attach({
 
 **ENV Variable**: `BUN_OTEL_HTTP_CAPTURE_HEADERS_SERVER_RESPONSE`
 
-**Instrument Config**: `captureAttributes.responseHeaders` (for `type: "http"`)
+**Instrument Config**: `captureAttributes.responseHeaders` (for `kind: "http"`)
 
 **Default**: `["content-type", "content-length"]`
 
@@ -444,7 +444,7 @@ Bun.telemetry.attach({
 
 **ENV Variable**: `BUN_OTEL_HTTP_PROPAGATE_HEADERS_FETCH_REQUEST`
 
-**Instrument Config**: `injectHeaders.request` (for `type: "fetch"`)
+**Instrument Config**: `injectHeaders.request` (for `kind: "fetch"`)
 
 **Default**: `["traceparent", "tracestate"]`
 
@@ -452,7 +452,7 @@ Bun.telemetry.attach({
 
 ```typescript
 Bun.telemetry.attach({
-  type: "fetch",
+  kind: "fetch",
   injectHeaders: {
     request: ["traceparent", "tracestate", "x-trace-id"],
   },
@@ -475,7 +475,7 @@ Bun.telemetry.attach({
 
 **ENV Variable**: `BUN_OTEL_HTTP_PROPAGATE_HEADERS_SERVER_RESPONSE`
 
-**Instrument Config**: `injectHeaders.response` (for `type: "http"`)
+**Instrument Config**: `injectHeaders.response` (for `kind: "http"`)
 
 **Default**: `[]` (empty - no response header injection by default)
 
@@ -483,7 +483,7 @@ Bun.telemetry.attach({
 
 ```typescript
 Bun.telemetry.attach({
-  type: "http",
+  kind: "http",
   injectHeaders: {
     response: ["traceparent"], // Inject traceparent into server responses
   },
@@ -974,7 +974,7 @@ test("HTTP server onOperationStart receives correct attributes", async () => {
   let startAttrs: any;
 
   Bun.telemetry.attach({
-    type: "http",
+    kind: "http",
     name: "test",
     version: "1.0.0",
     onOperationStart(id, attributes) {
@@ -1011,7 +1011,7 @@ test("HTTP server extracts traceparent header", async () => {
   let startAttrs: any;
 
   Bun.telemetry.attach({
-    type: "http",
+    kind: "http",
     name: "test",
     version: "1.0.0",
     onOperationStart(id, attributes) {
@@ -1049,7 +1049,7 @@ test("HTTP server ignores invalid traceparent header", async () => {
   let startAttrs: any;
 
   Bun.telemetry.attach({
-    type: "http",
+    kind: "http",
     name: "test",
     version: "1.0.0",
     onOperationStart(id, attributes) {
@@ -1093,7 +1093,7 @@ test("Fetch client injects traceparent header", async () => {
   });
 
   Bun.telemetry.attach({
-    type: "fetch",
+    kind: "fetch",
     name: "test",
     version: "1.0.0",
     injectHeaders: {
@@ -1123,7 +1123,7 @@ test("Fetch client onOperationError receives error attributes", async () => {
   let errorAttrs: any;
 
   Bun.telemetry.attach({
-    type: "fetch",
+    kind: "fetch",
     name: "test",
     version: "1.0.0",
     onOperationError(id, attributes) {
@@ -1152,7 +1152,7 @@ test("captureAttributes filters headers correctly", async () => {
   let startAttrs: any;
 
   Bun.telemetry.attach({
-    type: "http",
+    kind: "http",
     name: "test",
     version: "1.0.0",
     captureAttributes: {
@@ -1192,7 +1192,7 @@ test("captureAttributes filters headers correctly", async () => {
 test("Blocked headers are rejected at attach time", () => {
   expect(() => {
     Bun.telemetry.attach({
-      type: "http",
+      kind: "http",
       name: "test",
       version: "1.0.0",
       captureAttributes: {
@@ -1205,7 +1205,7 @@ test("Blocked headers are rejected at attach time", () => {
 test("Blocked headers cannot be injected", () => {
   expect(() => {
     Bun.telemetry.attach({
-      type: "fetch",
+      kind: "fetch",
       name: "test",
       version: "1.0.0",
       injectHeaders: {

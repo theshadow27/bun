@@ -17,7 +17,7 @@ Provide ergonomic, zero-overhead API for instrumenting Bun's native code with Op
 
 The `notifyOperation*` methods all share a symmetric signature: `(self, comptime kind: InstrumentKind, id: u64, attrs: *AttributeMap)`. This design enables:
 
-1. **Efficient callback dispatch**: Native instruments are stored in `array[InstrumentKind.COUNT]`, allowing O(1) lookup using the comptime `kind` parameter
+1. **Efficient callback dispatch**: Native instruments are stored in `array[InstrumentKinds.COUNT]`, allowing O(1) lookup using the comptime `kind` parameter
 2. **Code size reduction**: Symmetric signatures eliminate 4/5 of the SLOC compared to mismatched APIs
 3. **Zero-cost abstraction**: The comptime `kind` parameter allows the compiler to completely optimize away the dispatch logic
 4. **Stack allocation**: AttributeMap stays on the stack at the insertion point; conversion to JSValue happens internally
@@ -329,7 +329,7 @@ pub const InstrumentKind = enum(u8) {
 };
 ```
 
-Each instrument registers for a specific InstrumentKind. When Zig calls `notifyOperation*(.fetch, ...)`, the native layer uses the enum value (comptime known) to index into `instruments[InstrumentKind.COUNT]` array and calls the appropriate TypeScript callback with O(1) lookup and zero runtime overhead.
+Each instrument registers for a specific InstrumentKinds. When Zig calls `notifyOperation*(.fetch, ...)`, the native layer uses the enum value (comptime known) to index into `instruments[InstrumentKinds.COUNT]` array and calls the appropriate TypeScript callback with O(1) lookup and zero runtime overhead.
 
 # Attribute Naming Conventions
 

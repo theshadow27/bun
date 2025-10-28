@@ -6,6 +6,7 @@
 **Audience**: Bun runtime implementers
 
 **Related Contracts**:
+
 - [bun-telemetry-api.md](./bun-telemetry-api.md) - Core attach/detach API
 - [hook-lifecycle.md](./hook-lifecycle.md) - Hook specifications and attributes
 
@@ -16,12 +17,14 @@
 **Context**: Distributed tracing requires propagating trace context across service boundaries via HTTP headers (W3C traceparent, tracestate, vendor-specific headers).
 
 **Current Gap**:
+
 - `onOperationInject` hook exists and returns an array of header values
 - `notifyInject()` collects and merges results from all instruments
 - **BUT**: No mechanism to actually SET these headers on HTTP responses or fetch requests
 - **AND**: No way to configure WHICH header keys to inject per instrument kind
 
 **Requirements**:
+
 1. Instruments must declare which header keys they will inject (e.g., `["traceparent", "tracestate"]`)
 2. Runtime must cache this list when instruments are attached/detached (avoid per-request overhead)
 3. HTTP server must inject returned headers into responses
@@ -39,6 +42,7 @@
 **Policy**: **Linear Concatenation - Duplicates Allowed**
 
 **Implementation**:
+
 ```zig
 // In rebuildInjectConfig() - ALLOW duplicates
 for (self.instrument_table[kind_index].items) |*record| {
@@ -60,11 +64,13 @@ for (self.instrument_table[kind_index].items) |*record| {
 ```
 
 **Result**: Header name array may contain duplicates:
+
 ```
 Keys: ["traceparent", "x-custom", "traceparent", "tracestate"]
 ```
 
 **At Injection Time**:
+
 ```zig
 // In server.zig or fetch.zig
 for (config.response_headers.items) |header_key| {
@@ -76,23 +82,25 @@ for (config.response_headers.items) |header_key| {
 ```
 
 **Behavior with Duplicates**:
+
 - If key appears twice: `headers.set()` called twice
 - HTTP Headers implementation decides:
   - `set()`: Last call wins (overwrites previous)
   - `append()`: Creates multiple header instances (HTTP spec allows for some headers)
 
 **Example**:
+
 ```typescript
 // Instrument 1: declares ["traceparent", "x-custom"]
 const id1 = Bun.telemetry.attach({
-  type: InstrumentKind.HTTP,
+  kind: InstrumentKinds.HTTP,
   injectHeaders: { response: ["traceparent", "x-custom"] },
   onOperationInject: () => ({ traceparent: "trace-1", "x-custom": "value-1" }),
 });
 
 // Instrument 2: declares ["traceparent", "tracestate"] (traceparent duplicated!)
 const id2 = Bun.telemetry.attach({
-  type: InstrumentKind.HTTP,
+  kind: InstrumentKinds.HTTP,
   injectHeaders: { response: ["traceparent", "tracestate"] },
   onOperationInject: () => ({ traceparent: "trace-2", tracestate: "state-2" }),
 });
@@ -110,17 +118,20 @@ const id2 = Bun.telemetry.attach({
 ```
 
 **Rationale**:
+
 1. **Simplest Implementation**: No deduplication logic needed at config build time
 2. **Defers Merge Logic**: Let Headers API handle duplicates per HTTP spec
 3. **Edge Case**: Multiple instruments declaring same header is rare in practice
 4. **Future Optimization**: Can add deduplication later if needed (profile first)
 
 **Limitations**:
+
 - Config arrays may have duplicate keys (minor memory overhead)
 - Multiple `set()` calls at injection time (minor performance overhead)
 - Both overheads negligible for typical case (2-5 headers total)
 
 **Future Enhancement** (if profiling shows it matters):
+
 - Deduplicate keys during `rebuildInjectConfig()` using a set
 - For now: YAGNI - duplicates are fine
 
@@ -134,13 +145,13 @@ const id2 = Bun.telemetry.attach({
 
 ```typescript
 interface NativeInstrument {
-  type: InstrumentKind;
+  kind: InstrumentKind;
   name: string;
   version: string;
 
   // NEW: Declare header keys this instrument will inject
   injectHeaders?: {
-    request?: string[];  // Headers to inject into outgoing requests (fetch)
+    request?: string[]; // Headers to inject into outgoing requests (fetch)
     response?: string[]; // Headers to inject into outgoing responses (HTTP server)
   };
 
@@ -150,9 +161,10 @@ interface NativeInstrument {
 ```
 
 **Example Usage**:
+
 ```typescript
 const instrument = {
-  type: InstrumentKind.HTTP,
+  kind: InstrumentKinds.HTTP,
   name: "@opentelemetry/instrumentation-http",
   version: "0.1.0",
 
@@ -166,13 +178,14 @@ const instrument = {
     // Index 0 = traceparent, Index 1 = tracestate
     return [
       "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01", // traceparent
-      "vendor1=value1,vendor2=value2" // tracestate
+      "vendor1=value1,vendor2=value2", // tracestate
     ];
   },
 };
 ```
 
 **Validation Rules**:
+
 1. `injectHeaders.request` must be array of lowercase strings (max 20 headers)
 2. `injectHeaders.response` must be array of lowercase strings (max 20 headers)
 3. Header names must match `/^[a-z0-9-]+$/` (lowercase alphanumeric + hyphens)
@@ -220,10 +233,10 @@ pub const InjectConfig = struct {
 ```zig
 pub const Telemetry = struct {
     // Existing fields...
-    instrument_table: [InstrumentKind.COUNT]std.ArrayList(InstrumentRecord),
+    instrument_table: [InstrumentKinds.COUNT]std.ArrayList(InstrumentRecord),
 
     // NEW: Cached inject configuration per instrument kind
-    inject_configs: [InstrumentKind.COUNT]InjectConfig,
+    inject_configs: [InstrumentKinds.COUNT]InjectConfig,
 
     // ...
 };
@@ -331,6 +344,7 @@ if (telemetry.getInjectConfig(.http)) |config| {
 ```
 
 **Performance**:
+
 - Early return if no instruments inject headers (`config.response_headers.len == 0`)
 - Header keys pre-parsed at attach time (no per-request string allocation)
 - Only configured headers extracted from injected object (ignore extras)
@@ -360,6 +374,7 @@ if (telemetry.getInjectConfig(.fetch)) |config| {
 ```
 
 **Performance**:
+
 - Early return if no instruments inject headers
 - Headers injected BEFORE network I/O (no latency impact)
 - Only configured headers extracted (security: prevent header injection attacks)
@@ -391,7 +406,7 @@ pub fn jsGetInjectHeaders(
     if (!kind_value.isNumber()) return .js_null;
 
     const kind_int = kind_value.coerce(i32, global);
-    if (kind_int < 0 or kind_int >= InstrumentKind.COUNT) return .js_null;
+    if (kind_int < 0 or kind_int >= InstrumentKinds.COUNT) return .js_null;
 
     const kind: InstrumentKind = @enumFromInt(@as(u8, @intCast(kind_int)));
     const telemetry = getGlobalTelemetry() orelse return .js_null;
@@ -423,11 +438,13 @@ pub fn jsGetInjectHeaders(
 ## Performance Characteristics
 
 ### When No Instruments Inject Headers (Typical Case)
+
 - **Check cost**: Single integer comparison (`config.response_headers.len == 0`)
 - **Overhead**: <5ns per request
 - **Memory**: ~40 bytes per InstrumentKind for empty InjectConfig
 
 ### When Headers Injected (Distributed Tracing Active)
+
 - **Config lookup**: O(1) array index
 - **Hook invocation**: O(k) where k = number of instruments (typically 1-3)
 - **Header extraction**: O(h) where h = number of configured headers (typically 2-5)
@@ -435,6 +452,7 @@ pub fn jsGetInjectHeaders(
 - **Memory**: ~100 bytes per unique header key (amortized across all requests)
 
 ### Configuration Rebuild (Attach/Detach)
+
 - **Frequency**: Only when instruments added/removed (rare)
 - **Cost**: O(n × h) where n = instruments, h = headers per instrument
 - **Typical**: <1μs for 10 instruments with 5 headers each
@@ -444,9 +462,11 @@ pub fn jsGetInjectHeaders(
 ## Security Considerations
 
 ### Blocked Headers
+
 **Policy**: Sensitive headers must NEVER be injectable, even if declared
 
 **Blocklist** (enforced at attach time):
+
 ```typescript
 const BLOCKED_INJECT_HEADERS = [
   "authorization",
@@ -459,6 +479,7 @@ const BLOCKED_INJECT_HEADERS = [
 ```
 
 **Validation**:
+
 ```zig
 fn validateInjectHeaders(headers: []const []const u8) !void {
     const blocked = &[_][]const u8{
@@ -477,6 +498,7 @@ fn validateInjectHeaders(headers: []const []const u8) !void {
 ```
 
 ### Header Value Validation
+
 **Policy**: Only string values allowed (prevent header injection attacks)
 
 ```zig
@@ -488,6 +510,7 @@ if (!header_value.isString()) continue; // Skip non-string values
 ```
 
 ### Header Count Limits
+
 **Policy**: Prevent excessive header injection (DOS attack)
 
 - Max 20 headers per instrument (enforced at attach time)
@@ -501,10 +524,11 @@ if (!header_value.isString()) continue; // Skip non-string values
 ### Unit Tests (`test/js/bun/telemetry/`)
 
 **Test: Header Configuration Caching**
+
 ```typescript
 test("inject config rebuilt on attach/detach", () => {
   const id1 = Bun.telemetry.attach({
-    type: InstrumentKind.HTTP,
+    kind: InstrumentKinds.HTTP,
     name: "instrument-1",
     version: "1.0.0",
     injectHeaders: { response: ["traceparent"] },
@@ -512,34 +536,35 @@ test("inject config rebuilt on attach/detach", () => {
   });
 
   const hooks = Bun.telemetry.nativeHooks();
-  const config1 = hooks?.getInjectHeaders(InstrumentKind.HTTP);
+  const config1 = hooks?.getInjectHeaders(InstrumentKinds.HTTP);
   expect(config1?.response).toEqual(["traceparent"]);
 
   const id2 = Bun.telemetry.attach({
-    type: InstrumentKind.HTTP,
+    kind: InstrumentKinds.HTTP,
     name: "instrument-2",
     version: "1.0.0",
     injectHeaders: { response: ["tracestate"] },
     onOperationInject: () => ({ tracestate: "value" }),
   });
 
-  const config2 = hooks?.getInjectHeaders(InstrumentKind.HTTP);
+  const config2 = hooks?.getInjectHeaders(InstrumentKinds.HTTP);
   expect(config2?.response).toContain("traceparent");
   expect(config2?.response).toContain("tracestate");
 
   Bun.telemetry.detach(id1);
 
-  const config3 = hooks?.getInjectHeaders(InstrumentKind.HTTP);
+  const config3 = hooks?.getInjectHeaders(InstrumentKinds.HTTP);
   expect(config3.response).toEqual(["tracestate"]);
   expect(config3.response).not.toContain("traceparent");
 });
 ```
 
 **Test: HTTP Server Header Injection**
+
 ```typescript
 test("HTTP server injects response headers from instrument", async () => {
   const instrument = {
-    type: InstrumentKind.HTTP,
+    kind: InstrumentKinds.HTTP,
     name: "test-inject",
     version: "1.0.0",
     injectHeaders: { response: ["traceparent", "tracestate"] },
@@ -568,6 +593,7 @@ test("HTTP server injects response headers from instrument", async () => {
 ```
 
 **Test: Fetch Client Header Injection**
+
 ```typescript
 test("fetch client injects request headers from instrument", async () => {
   let capturedHeaders: Record<string, string> = {};
@@ -581,7 +607,7 @@ test("fetch client injects request headers from instrument", async () => {
   });
 
   const instrument = {
-    type: InstrumentKind.Fetch,
+    kind: InstrumentKinds.Fetch,
     name: "test-inject",
     version: "1.0.0",
     injectHeaders: { request: ["traceparent"] },
@@ -601,11 +627,12 @@ test("fetch client injects request headers from instrument", async () => {
 ```
 
 **Test: Security - Blocked Headers**
+
 ```typescript
 test("attach rejects blocked header injection", () => {
   expect(() => {
     Bun.telemetry.attach({
-      type: InstrumentKind.HTTP,
+      kind: InstrumentKinds.HTTP,
       name: "malicious",
       version: "1.0.0",
       injectHeaders: { response: ["authorization"] }, // Blocked
@@ -616,6 +643,7 @@ test("attach rejects blocked header injection", () => {
 ```
 
 **Test: Header Merge - Last Wins**
+
 ```typescript
 test("multiple instruments - last wins for duplicate headers", async () => {
   using server = Bun.serve({
@@ -625,7 +653,7 @@ test("multiple instruments - last wins for duplicate headers", async () => {
 
   // First instrument attached
   const id1 = Bun.telemetry.attach({
-    type: InstrumentKind.HTTP,
+    kind: InstrumentKinds.HTTP,
     name: "instrument-1",
     version: "1.0.0",
     injectHeaders: { response: ["traceparent", "x-custom"] },
@@ -637,7 +665,7 @@ test("multiple instruments - last wins for duplicate headers", async () => {
 
   // Second instrument attached (later) - duplicates traceparent
   const id2 = Bun.telemetry.attach({
-    type: InstrumentKind.HTTP,
+    kind: InstrumentKinds.HTTP,
     name: "instrument-2",
     version: "1.0.0",
     injectHeaders: { response: ["traceparent", "tracestate"] },
@@ -666,6 +694,7 @@ test("multiple instruments - last wins for duplicate headers", async () => {
 ## Implementation Phases
 
 ### Phase 1: Configuration Infrastructure
+
 1. Add `InjectConfig` struct to `telemetry.zig`
 2. Add `inject_configs` array to `Telemetry` struct
 3. Implement `rebuildInjectConfig()` function
@@ -674,6 +703,7 @@ test("multiple instruments - last wins for duplicate headers", async () => {
 6. Write tests for config caching
 
 ### Phase 2: HTTP Server Integration
+
 1. Add header injection code to `server.zig`
 2. Extract configured headers from `notifyInject()` result
 3. Set response headers before sending to client
@@ -681,6 +711,7 @@ test("multiple instruments - last wins for duplicate headers", async () => {
 5. Verify W3C trace context propagation works end-to-end
 
 ### Phase 3: Fetch Client Integration
+
 1. Add header injection code to `fetch.zig`
 2. Extract configured headers from `notifyInject()` result
 3. Set request headers before sending HTTP request
@@ -688,6 +719,7 @@ test("multiple instruments - last wins for duplicate headers", async () => {
 5. Verify distributed tracing across fetch() calls
 
 ### Phase 4: Security Hardening
+
 1. Add blocked header validation to attach()
 2. Add header count limits
 3. Add header value size limits
@@ -699,11 +731,13 @@ test("multiple instruments - last wins for duplicate headers", async () => {
 ## Future Extensions
 
 ### Planned
+
 - Support for `baggage` header (W3C Baggage Propagation)
 - Support for `b3` header (Zipkin B3 propagation)
 - Custom header extraction (read headers from incoming requests)
 
 ### Non-Goals
+
 - Dynamic header configuration (runtime changes without attach/detach)
 - Per-request header configuration (would require per-request allocation)
 - Header transformation/encoding (instruments control format)

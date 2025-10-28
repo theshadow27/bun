@@ -29,26 +29,23 @@ pub const InstrumentKind = enum(u8) {
 };
 ```
 
-**Internal TypeScript Definition**:
+**Public API** (string-based):
 
 ```typescript
-export enum InstrumentKind {
-  Custom = 0,
-  HTTP = 1,
-  Fetch = 2,
-  SQL = 3,
-  Redis = 4,
-  S3 = 5,
-}
+export type InstrumentKind =
+  | "custom"
+  | "http"
+  | "fetch"
+  | "sql"
+  | "redis"
+  | "s3";
 ```
 
-**External TypeScript Definition**:
+Used in the public `Bun.telemetry.attach()` API for ergonomic registration. The Zig layer automatically converts these string literals to numeric enum values for internal routing.
 
-used for registering instruments only! translated by zig code.
+**Internal Representation**:
 
-```typescript
-export type InstrumentKind = "http" | "fetch" | "sql" | "redis" | "s3";
-```
+The Bun runtime uses numeric enum values (0-5) internally for performance, but this is an implementation detail. Application code always uses string literals when calling `Bun.telemetry.attach({ kind: "http", ... })`.
 
 **Lifecycle**: Compile-time constant
 
@@ -105,7 +102,7 @@ pub const InstrumentRecord = struct {
 ```zig
 pub const Telemetry = struct {
     // Fixed-size array indexed by InstrumentKind
-    instrument_table: [InstrumentKind.COUNT]std.ArrayList(InstrumentRecord),
+    instrument_table: [InstrumentKinds.COUNT]std.ArrayList(InstrumentRecord),
 
     // ID generation (atomic for thread safety)
     next_instrument_id: std.atomic.Value(u32),
@@ -140,7 +137,7 @@ pub const Telemetry = struct {
 export type OpId = number & { readonly __brand: "OpId" };
 
 export interface NativeInstrument {
-  type: InstrumentKind;
+  kind: InstrumentKind;
   name: string;
   version: string;
 
@@ -517,7 +514,7 @@ context.with(() => {});   // ⚠️ Workaround in BunAsyncLocalStorageContextMan
 
 ### Instrument Registration
 
-- `type` must be valid InstrumentKind enum value
+- `kind` must be valid InstrumentKind string value
 - `name` and `version` must be non-empty strings
 - At least one hook function (`onOperation*`) must be provided
 - Hook functions must be callable (checked at attach time)
