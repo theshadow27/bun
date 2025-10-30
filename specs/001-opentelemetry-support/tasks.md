@@ -83,7 +83,7 @@
 - [ ] T025 [P] Implement header filtering in src/telemetry/http.zig (deny-by-default security model with blocklist enforcement)
 - [ ] T026 Add telemetry fields to src/bun.js/api/server/RequestContext.zig (telemetry_request_id: u64, request_start_time_ns: u64)
 - [ ] T027 Integrate Telemetry hooks into src/bun.js/api/server.zig AFTER ensureURL(), BEFORE onRequest handler (invokeStart with HTTP attributes, set ctx.telemetry_request_id)
-- [ ] T028 [P] Integrate Telemetry hook into src/bun.js/api/server/RequestContext.zig finalize() method (invokeEnd + exitContext for AsyncLocalStorage cleanup, set telemetry_request_id = 0)
+- [ ] T028 [P] Integrate Telemetry hook into src/bun.js/api/server/RequestContext.zig finalize() method (invokeEnd, set telemetry_request_id = 0)
 - [ ] T029 [P] Integrate Telemetry hook into src/bun.js/api/server/RequestContext.zig handleReject() method (invokeError before error handling)
 - [ ] T030 Implement ResponseBuilder pattern in src/bun.js/api/server/RequestContext.zig response paths (setStatus, setHeaders, injectHeaders, fireAndForget with defer cleanup)
 - [ ] T031 [P] Validate src/js/internal/telemetry_http.ts bridge module (registerInstrument/unregisterInstrument/handleIncomingRequest/handleWriteHead)

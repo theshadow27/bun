@@ -277,13 +277,10 @@ test/integration/opentelemetry/
 1. **server.zig Integration Ordering**:
    - ✅ **MUST call `ensureURL()` BEFORE `notifyRequestStart()`** - telemetry callbacks need valid URL
    - ✅ **MUST call `notifyRequestStart()` BEFORE `onRequest` handler** - sets up AsyncLocalStorage context
-   - ❌ **DO NOT call `enterContext()` after `notifyRequestStart()`** - would overwrite OTel Context set by callback
-   - Note: `enterContext/exitContext` are for Node.js http.Server compatibility ONLY
 
 2. **RequestContext.zig Memory Management**:
    - Add TWO fields: `telemetry_request_id: u64` (8 bytes), `request_start_time_ns: u64` (8 bytes)
    - Total cost: 16 bytes per request (32KB for 2048 concurrent requests)
-   - **MUST call `exitContext()` in `finalize()`** - cleans up AsyncLocalStorage, prevents memory leak
    - **MUST set `telemetry_request_id = 0` after cleanup** - prevents double-cleanup
 
 3. **ResponseBuilder Pattern** (optimization from POC):
