@@ -897,6 +897,79 @@ async function commitBatch(): Promise<void> {
 }
 
 // ============================================================================
+// AUTOCOMPLETE
+// ============================================================================
+
+async function autocompleteBatch(): Promise<void> {
+  const session = getActiveSession();
+  if (!session) {
+    console.log("❌ No active session");
+    return;
+  }
+
+  const batch = getCurrentBatch(session.id);
+  if (!batch) {
+    console.log("❌ No active batch");
+    return;
+  }
+
+  const commentIds = JSON.parse(batch.comment_ids) as number[];
+  if (commentIds.length === 0) {
+    console.log("❌ No comments in batch");
+    return;
+  }
+
+  // Check if all comments are resolved in discuss.sqlite
+  const comments = getCommentsByIds(commentIds);
+  const allResolved = comments.every(c => c.github_resolved === 1);
+  const resolvedCount = comments.filter(c => c.github_resolved === 1).length;
+
+  console.log("\n🔍 Autocomplete Check");
+  console.log("━".repeat(80));
+  console.log(`Batch: ${batch.name}`);
+  console.log(`Comments: ${commentIds.length} total, ${resolvedCount} resolved`);
+
+  if (allResolved) {
+    // Get the commit hash from one of the resolved comments (they should all be the same)
+    // We'll need to query discuss.sqlite for the resolved_commit
+    const firstComment = comments[0];
+    const commitHash =
+      batch.commit_hash ||
+      discussDb
+        .query("SELECT resolved_commit FROM comments WHERE id = ? AND resolved_commit IS NOT NULL")
+        .get(firstComment.id)?.resolved_commit ||
+      "unknown";
+
+    // Mark batch as done
+    reviewDb.run("UPDATE review_batches SET state = 'done', commit_hash = ?, updated_at = ? WHERE id = ?", [
+      commitHash,
+      new Date().toISOString(),
+      batch.id,
+    ]);
+
+    // Clear from session
+    reviewDb.run("UPDATE review_sessions SET current_batch_id = NULL, mode = 'sequential' WHERE id = ?", [session.id]);
+
+    console.log("\n✅ All comments in this batch are resolved!");
+    console.log(`📦 Batch "${batch.name}" closed successfully`);
+    if (commitHash !== "unknown") {
+      console.log(`🔗 Commit: ${commitHash.substring(0, 10)}`);
+    }
+    console.log("\n💡 Session returned to sequential mode");
+    console.log("   Start a new batch: bun review.ts batch <name>");
+    console.log(`   View completed batch: sqlite3 review.sqlite "SELECT * FROM review_batches WHERE id = ${batch.id}"`);
+
+    updateSessionActivity(session.id);
+  } else {
+    const unresolvedIds = comments.filter(c => c.github_resolved !== 1).map(c => c.id);
+    console.log("\n⚠️  Not all comments are resolved yet:");
+    console.log(`   ${unresolvedIds.length} unresolved: ${unresolvedIds.join(", ")}`);
+    console.log("\n💡 Resolve them first:");
+    console.log(`   bun discuss.ts resolve ${unresolvedIds.join(" ")} <commit-hash>`);
+  }
+}
+
+// ============================================================================
 // CLI HANDLER
 // ============================================================================
 
@@ -933,6 +1006,7 @@ VERIFICATION & COMMIT:
   verify                     Check that comment files are staged
   ready                      Check if batch is ready to commit
   commit                     Create git commit (validates criteria first)
+  autocomplete               Close batch if all comments are resolved
   status                     Show status of all batch comments
 
 EXAMPLES:
@@ -1054,6 +1128,10 @@ async function main(): Promise<void> {
 
     case "commit":
       await commitBatch();
+      break;
+
+    case "autocomplete":
+      await autocompleteBatch();
       break;
 
     default:

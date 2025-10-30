@@ -131,7 +131,8 @@ const db = (() => {
       resolved_commit TEXT,
       waiting_reply INTEGER NOT NULL DEFAULT 0,
       snoozed_reply_count INTEGER DEFAULT 0,
-      notes TEXT
+      notes TEXT,
+      gone_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS replies (
@@ -717,7 +718,7 @@ function searchComments(query: string, showResolved: boolean = false): void {
   console.log();
 }
 
-function showComment(id: string): void {
+function showComment(id: string, showAll: boolean = false): void {
   const comment = getComment(parseInt(id));
 
   if (!comment) {
@@ -764,11 +765,19 @@ function showComment(id: string): void {
     for (const reply of replies) {
       console.log(`\n   ┌─ ${reply.user} @ ${new Date(reply.created_at).toLocaleString()}`);
       const lines = reply.body.split("\n");
-      for (const line of lines.slice(0, 10)) {
-        console.log(`   │  ${line}`);
-      }
-      if (lines.length > 10) {
-        console.log(`   │  ... (${lines.length - 10} more lines)`);
+      if (showAll) {
+        for (const line of lines) {
+          console.log(`   │  ${line}`);
+        }
+      } else {
+        for (const line of lines.slice(0, 10)) {
+          console.log(`   │  ${line}`);
+        }
+        if (lines.length > 10) {
+          console.log(
+            `   │  ... (${lines.length - 10} more lines, use \`bun ${SCRIPT_NAME} show -A ${id}\` for full version)`,
+          );
+        }
       }
       console.log(`   └─`);
     }
@@ -927,7 +936,7 @@ function addNote(id: string, noteText: string): void {
   console.log(`✅ Added note to comment #${id}`);
 }
 
-async function resolveComment(id: string, commit?: string, replyMessage?: string): Promise<void> {
+async function resolveComment(id: string, commit?: string, replyMessage?: string, skipSync = false): Promise<void> {
   const comment = db.query("SELECT thread_id, path FROM comments WHERE id = ?").get(parseInt(id)) as {
     thread_id: string | null;
     path: string;
@@ -973,8 +982,10 @@ async function resolveComment(id: string, commit?: string, replyMessage?: string
   const resolvedCommit = commit || "HEAD";
   updateCommentField(parseInt(id), "resolved_commit", resolvedCommit);
 
-  console.log(`🔄 Re-syncing with GitHub...`);
-  await fetchComments();
+  if (!skipSync) {
+    console.log(`🔄 Re-syncing with GitHub...`);
+    await fetchComments();
+  }
 
   console.log(`✅ Comment #${id} resolved (commit: ${resolvedCommit})`);
 }
@@ -1096,6 +1107,111 @@ function unsnoozeAll(): void {
 // ============================================================================
 // OUTDATED COMMENT MANAGEMENT
 // ============================================================================
+
+async function isCommentDeletedOnGitHub(commentId: number): Promise<boolean> {
+  try {
+    await $`gh api repos/${REPO}/pulls/${DEFAULT_PR}/comments/${commentId}`.quiet();
+    return false; // Comment exists
+  } catch (error: any) {
+    // Check if it's a 404 (comment deleted)
+    if (error.stdout && error.stdout.includes('"message": "Not Found"')) {
+      return true;
+    }
+    if (error.stderr && error.stderr.includes("HTTP 404")) {
+      return true;
+    }
+    // Other errors (network issues, auth, etc.) - assume comment still exists
+    console.warn(`⚠️  Unable to verify comment #${commentId}: ${error.message}`);
+    return false;
+  }
+}
+
+async function findZombieComments(options: { dryRun?: boolean; includeResolved?: boolean } = {}): Promise<void> {
+  const { dryRun = false, includeResolved = false } = options;
+
+  // Query comments to check (exclude already marked as gone)
+  const resolvedFilter = includeResolved ? "" : "AND github_resolved = 0";
+  const comments = db
+    .query(
+      `SELECT id, path, line, first_seen FROM comments WHERE gone_at IS NULL ${resolvedFilter} ORDER BY first_seen ASC`,
+    )
+    .all() as { id: number; path: string; line: number | null; first_seen: string }[];
+
+  if (comments.length === 0) {
+    console.log("✅ No comments to check");
+    return;
+  }
+
+  console.log(`🔍 Checking ${comments.length} comments (oldest to newest)...`);
+  console.log(`   Mode: ${dryRun ? "DRY RUN (no changes)" : "LIVE (will mark as zombies)"}\n`);
+
+  const zombies: Array<{ id: number; path: string; line: number | null; reason: string }> = [];
+  const skipped: number[] = [];
+  let checked = 0;
+
+  for (const comment of comments) {
+    const commentTime = new Date(comment.first_seen);
+    const fileExists = !(await isFileDeleted(comment.path));
+
+    // Only check if file is deleted OR modified after comment time
+    let shouldCheck = false;
+    let reason = "";
+
+    if (!fileExists) {
+      shouldCheck = true;
+      reason = "File deleted";
+    } else {
+      const fileModTime = await getFileModifiedTime(comment.path);
+      if (fileModTime && fileModTime > commentTime) {
+        shouldCheck = true;
+        const timeDiff = Math.floor((fileModTime.getTime() - commentTime.getTime()) / 1000 / 60);
+        reason = `File modified ${timeDiff < 60 ? timeDiff + "m" : Math.floor(timeDiff / 60) + "h"} after comment`;
+      }
+    }
+
+    if (!shouldCheck) {
+      skipped.push(comment.id);
+      continue;
+    }
+
+    // Check if comment exists on GitHub
+    checked++;
+    const isDeleted = await isCommentDeletedOnGitHub(comment.id);
+
+    if (isDeleted) {
+      zombies.push({ id: comment.id, path: comment.path, line: comment.line, reason });
+      console.log(`❌ [${comment.id}] ${comment.path}${formatLineInfo(comment.line)} - ${reason} + 404 on GitHub`);
+    }
+  }
+
+  console.log(`\n📊 Results:`);
+  console.log(`   ⏭️  ${skipped.length} comments skipped (file unchanged since comment)`);
+  console.log(`   ✅ ${checked - zombies.length} comments verified on GitHub`);
+  console.log(`   🧟 ${zombies.length} zombie comments (deleted from GitHub)`);
+
+  if (zombies.length === 0) {
+    console.log("\n🎉 No zombie comments found!");
+    return;
+  }
+
+  if (dryRun) {
+    console.log(`\n💡 Dry run complete. To mark these as zombies, run:`);
+    console.log(`   bun ${SCRIPT_NAME} zombies`);
+    return;
+  }
+
+  // Mark zombies with gone_at timestamp
+  const now = new Date().toISOString();
+  console.log(`\n🔄 Marking ${zombies.length} comments as zombies...`);
+
+  for (const zombie of zombies) {
+    db.prepare(`UPDATE comments SET outdated = 1, gone_at = ? WHERE id = ?`).run(now, zombie.id);
+  }
+
+  console.log(`✅ Marked ${zombies.length} comments with gone_at timestamp`);
+  console.log(`\n💡 You can view outdated comments with:`);
+  console.log(`   bun ${SCRIPT_NAME} outdated`);
+}
 
 async function isFileDeleted(path: string): Promise<boolean> {
   try {
@@ -1387,6 +1503,8 @@ COMMANDS:
   verify-outdated <id>           Show comprehensive verification info for outdated comment
   resolve-file <path> <commit>   Resolve all outdated comments for a file
   resolve-deleted <commit>       Resolve all comments for deleted files (interactive)
+  zombies [--dry-run] [--include-resolved]
+                                 Find and mark zombie comments (deleted from GitHub)
   help                           Show this help message
 
 EXAMPLES:
@@ -1419,6 +1537,11 @@ OUTDATED WORKFLOW EXAMPLES:
   bun ${SCRIPT_NAME} resolve-file packages/bun-otel/src/BunSDK.ts f3305c3e0f
   bun ${SCRIPT_NAME} resolve 2462727818 2463031240 2463031242 e749aa5948  # Resolve multiple IDs
   bun ${SCRIPT_NAME} resolve-deleted e749aa5948  # Batch resolve deleted files
+
+ZOMBIE CLEANUP EXAMPLES:
+  bun ${SCRIPT_NAME} zombies --dry-run           # Check for zombies without marking
+  bun ${SCRIPT_NAME} zombies                     # Find and mark zombie comments
+  bun ${SCRIPT_NAME} zombies --include-resolved  # Also check resolved comments
 
 INTEGRATION:
   - Resolution status synced with GitHub (resolving/unresolving updates GitHub)
@@ -1466,18 +1589,23 @@ async function main() {
 
     case "show": {
       if (!args[1]) {
-        console.error(`❌ Usage: bun ${SCRIPT_NAME} show <id>...`);
+        console.error(`❌ Usage: bun ${SCRIPT_NAME} show [-A] <id>...`);
         process.exit(1);
       }
 
+      let showAll = false;
       const ids: string[] = [];
       for (let i = 1; i < args.length; i++) {
         const arg = args[i];
-        const existsInDb = db.query("SELECT 1 FROM comments WHERE id = ?").get(parseInt(arg)) !== null;
-        if (existsInDb) {
-          ids.push(arg);
+        if (arg === "-A" || arg === "--all") {
+          showAll = true;
         } else {
-          console.warn(`⚠️  Skipping invalid ID: ${arg}`);
+          const existsInDb = db.query("SELECT 1 FROM comments WHERE id = ?").get(parseInt(arg)) !== null;
+          if (existsInDb) {
+            ids.push(arg);
+          } else {
+            console.warn(`⚠️  Skipping invalid ID: ${arg}`);
+          }
         }
       }
 
@@ -1492,7 +1620,7 @@ async function main() {
       }
 
       for (let i = 0; i < ids.length; i++) {
-        showComment(ids[i]);
+        showComment(ids[i], showAll);
         if (i < ids.length - 1) {
           console.log("─".repeat(80));
         }
@@ -1575,12 +1703,18 @@ async function main() {
         process.exit(1);
       }
 
+      // Resolve all comments without syncing (skip sync for efficiency)
       for (const id of ids) {
-        await resolveComment(id, commitHash, replyMessage);
+        await resolveComment(id, commitHash, replyMessage, true);
         if (ids.length > 1) {
           console.log();
         }
       }
+
+      // Sync once at the end for all resolved comments
+      console.log(`🔄 Re-syncing with GitHub...`);
+      await fetchComments();
+
       break;
     }
 
@@ -1645,6 +1779,13 @@ async function main() {
         process.exit(1);
       }
       await resolveDeletedFiles(args[1]);
+      break;
+    }
+
+    case "zombies": {
+      const dryRun = args.includes("--dry-run");
+      const includeResolved = args.includes("--include-resolved");
+      await findZombieComments({ dryRun, includeResolved });
       break;
     }
 
